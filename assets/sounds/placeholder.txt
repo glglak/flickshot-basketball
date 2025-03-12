@@ -1,0 +1,7 @@
+Place your sound files here:
+
+- button_click.mp3: Used for UI button clicks
+- level_complete.mp3: Played when completing a level
+- level_failed.mp3: Played when failing a level
+
+Replace this placeholder file with actual sound files before building for production.
