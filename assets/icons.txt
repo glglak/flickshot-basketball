@@ -1,0 +1,8 @@
+Required icon files for the app:
+
+- icon.png: Main app icon (1024×1024 recommended)
+- splash.png: Splash screen image (1242×2436 recommended)
+- adaptive-icon.png: Android adaptive icon (foreground layer, 1024×1024 recommended)
+- favicon.png: Web favicon (48×48 recommended)
+
+Replace this placeholder file with actual icon files before building for production.
