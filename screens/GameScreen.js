@@ -40,11 +40,6 @@ const Physics = (entities, { time }) => {
     Matter.Body.setStatic(ball, true);
   }
   
-  // DEBUG: Log ball position and velocity occasionally to troubleshoot
-  if (Math.random() < 0.01) {
-    console.log('Ball position:', ball.position, 'velocity:', ball.velocity, 'isStatic:', ball.isStatic);
-  }
-  
   return entities;
 };
 
@@ -65,34 +60,55 @@ const GameScreen = ({ route, navigation }) => {
   
   const gameEngineRef = useRef(null);
   const ballPositionRef = useRef({ x: width * 0.2, y: height - FLOOR_HEIGHT - BALL_RADIUS });
+  const soundRef = useRef(null);
   
-  // Sound effects
-  const playShootSound = async () => {
+  // Sound effects - using a single sound instance to prevent memory leaks
+  const setupSound = async () => {
     if (!soundEnabled) return;
     
     try {
+      // Unload any existing sound
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      
+      // Create a new sound instance
       const { sound } = await Audio.Sound.createAsync(
-        require('../assets/sounds/button_click.mp3'),
-        { shouldPlay: true }
+        require('../assets/sounds/button_click.mp3')
       );
       
-      // Set up an error handler for the sound
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.error) {
-          console.log('Sound error:', status.error);
-        }
-      });
-      
-      // Unload sound when finished to prevent memory leaks
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.didJustFinish) {
-          sound.unloadAsync().catch(e => console.log('Error unloading sound:', e));
-        }
-      });
+      soundRef.current = sound;
     } catch (error) {
-      console.log('Error playing sound:', error);
+      console.log('Error setting up sound:', error);
     }
   };
+  
+  // Play the shoot sound
+  const playShootSound = async () => {
+    if (!soundEnabled || !soundRef.current) return;
+    
+    try {
+      // Reset sound to start
+      await soundRef.current.setPositionAsync(0);
+      await soundRef.current.playAsync();
+    } catch (error) {
+      console.log('Error playing sound:', error);
+      // If there's an error, try to set up the sound again
+      setupSound();
+    }
+  };
+  
+  // Set up sound on component mount
+  useEffect(() => {
+    setupSound();
+    
+    // Clean up sound when component unmounts
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
+    };
+  }, [soundEnabled]);
   
   // Initialize physics engine
   useEffect(() => {
@@ -105,26 +121,26 @@ const GameScreen = ({ route, navigation }) => {
     // Load level configuration
     const levelConfig = generateLevel(level);
     
-    // Set world gravity
+    // Set world gravity (reduce slightly for better mobile experience)
     world.gravity.x = levelConfig.gravity.x;
-    world.gravity.y = levelConfig.gravity.y; // Restore normal gravity for better physics
+    world.gravity.y = levelConfig.gravity.y * 0.8;
     
-    // Create ball
+    // Create ball with improved physics properties
     const ball = Matter.Bodies.circle(
       ballPositionRef.current.x,
       ballPositionRef.current.y,
       BALL_RADIUS,
       { 
-        restitution: 0.8, 
-        friction: 0.05,
-        frictionAir: 0.0005,
+        restitution: 0.85,   // Increased bounciness
+        friction: 0.03,       // Reduced friction
+        frictionAir: 0.0001, // Reduced air friction
         label: 'ball',
-        isStatic: true, // Ball is static until shot
-        density: 0.001, // Lower density to make the ball lighter
+        isStatic: true,      // Ball is static until shot
+        density: 0.0008,     // Lower density for better physics
       }
     );
     
-    // Create floor
+    // Create floor with improved physics
     const floor = Matter.Bodies.rectangle(
       width / 2,
       height - FLOOR_HEIGHT / 2,
@@ -133,8 +149,8 @@ const GameScreen = ({ route, navigation }) => {
       { 
         isStatic: true,
         label: 'floor',
-        restitution: 0.7, // Increased bounce for the floor
-        friction: 0.1,    // Added some friction
+        restitution: 0.8,  // Increased bounce
+        friction: 0.2,     // Improved friction
       }
     );
     
@@ -157,7 +173,7 @@ const GameScreen = ({ route, navigation }) => {
       height / 2,
       20,
       height * 2,
-      { isStatic: true, label: 'wall', restitution: 0.5 }
+      { isStatic: true, label: 'wall', restitution: 0.7 }
     );
     
     const rightWall = Matter.Bodies.rectangle(
@@ -165,7 +181,7 @@ const GameScreen = ({ route, navigation }) => {
       height / 2,
       20,
       height * 2,
-      { isStatic: true, label: 'wall', restitution: 0.5 }
+      { isStatic: true, label: 'wall', restitution: 0.7 }
     );
     
     const ceiling = Matter.Bodies.rectangle(
@@ -173,7 +189,7 @@ const GameScreen = ({ route, navigation }) => {
       -10,
       width * 2,
       20,
-      { isStatic: true, label: 'ceiling', restitution: 0.5 }
+      { isStatic: true, label: 'ceiling', restitution: 0.7 }
     );
     
     // Create hoop
@@ -207,7 +223,7 @@ const GameScreen = ({ route, navigation }) => {
             isStatic: true,
             label: 'obstacle',
             friction: obstacle.friction || 0.1,
-            restitution: obstacle.restitution || 0.3,
+            restitution: obstacle.restitution || 0.5, // Increased bounciness
           }
         );
         Matter.Composite.add(world, obstacleBody);
@@ -220,6 +236,9 @@ const GameScreen = ({ route, navigation }) => {
       
       pairs.forEach((pair) => {
         const { bodyA, bodyB } = pair;
+        
+        // Log collisions for debugging
+        console.log('Collision detected between', bodyA.label, 'and', bodyB.label);
         
         // Check if ball entered the hoop
         if (
@@ -244,6 +263,24 @@ const GameScreen = ({ route, navigation }) => {
           }
         }
         
+        // Check if ball hit the floor or walls and apply appropriate bounce
+        if ((bodyA.label === 'ball' && (bodyB.label === 'floor' || bodyB.label === 'wall' || bodyB.label === 'ceiling')) ||
+            (bodyB.label === 'ball' && (bodyA.label === 'floor' || bodyA.label === 'wall' || bodyA.label === 'ceiling'))) {
+          // Apply additional "impulse" on bounce to ensure the ball keeps moving
+          const ball = bodyA.label === 'ball' ? bodyA : bodyB;
+          const velocity = ball.velocity;
+          
+          // Add a small upward impulse on floor collisions to ensure bounce
+          if (bodyA.label === 'floor' || bodyB.label === 'floor') {
+            if (Math.abs(velocity.y) < 2) {
+              Matter.Body.setVelocity(ball, {
+                x: velocity.x,
+                y: velocity.y * -1.2 // Boost the vertical velocity on low-energy floor impacts
+              });
+            }
+          }
+        }
+        
         // Check if ball hit the bottom barrier and reset
         if (
           (bodyA.label === 'ball' && bodyB.label === 'bottomBarrier') ||
@@ -252,9 +289,6 @@ const GameScreen = ({ route, navigation }) => {
           // Ball went too far down, reset it
           resetBall();
         }
-        
-        // Debug collision events
-        console.log('Collision between', bodyA.label, 'and', bodyB.label);
       });
     });
     
@@ -369,7 +403,7 @@ const GameScreen = ({ route, navigation }) => {
     const ballX = ballPositionRef.current.x;
     const ballY = ballPositionRef.current.y;
     
-    // Scale factor for force (can be adjusted to control sensitivity)
+    // Scale factor for force (adjusted for better trajectory visualization)
     const forceScale = 0.1;
     
     // Force vector (opposite to drag direction)
@@ -414,20 +448,23 @@ const GameScreen = ({ route, navigation }) => {
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
-    // Calculate force magnitude (increased from original)
+    // Calculate force magnitude (increased for better physics)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
     
     // Apply force in the opposite direction of the drag (increased force magnitude)
-    const forceMagnitude = Math.min(dragDistance * 0.003, 0.05); // Increased the force magnitude
+    // Adjusted for better mobile experience
+    const forceMagnitude = Math.min(dragDistance * 0.004, 0.06);
     
     Matter.Body.applyForce(ball, ball.position, {
       x: -dx * forceMagnitude,
       y: -dy * forceMagnitude
     });
     
-    console.log('Shot applied force:', {
+    console.log('Shot force applied:', {
       x: -dx * forceMagnitude,
-      y: -dy * forceMagnitude
+      y: -dy * forceMagnitude,
+      magnitude: forceMagnitude,
+      dragDistance
     });
     
     // Decrement shots remaining
@@ -442,6 +479,7 @@ const GameScreen = ({ route, navigation }) => {
       y: ballPositionRef.current.y
     });
     Matter.Body.setVelocity(ball, { x: 0, y: 0 });
+    Matter.Body.setAngularVelocity(ball, 0);
     Matter.Body.setStatic(ball, true);
   };
   
