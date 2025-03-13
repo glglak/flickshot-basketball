@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Easing } from 'react-native';
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const Basketball = (props) => {
@@ -10,31 +10,9 @@ const Basketball = (props) => {
   const x = position.x - size / 2;
   const y = position.y - size / 2;
   
-  // Add a pulsing animation to make the ball more visible
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 300,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true
-        })
-      ])
-    ).start();
-  }, []);
-  
   // Simple basketball component with gradient and lines
   return (
-    <Animated.View
+    <View
       style={[
         styles.ball,
         {
@@ -43,10 +21,7 @@ const Basketball = (props) => {
           width: size,
           height: size,
           borderRadius: size / 2,
-          transform: [
-            { rotate: angle + 'rad' },
-            { scale: pulseAnim } // Add subtle pulse effect
-          ]
+          transform: [{ rotate: angle + 'rad' }]
         }
       ]}
     >
@@ -57,7 +32,7 @@ const Basketball = (props) => {
         <View style={[styles.line, styles.horizontalLine]} />
         <View style={[styles.line, styles.verticalLine]} />
       </LinearGradient>
-    </Animated.View>
+    </View>
   );
 };
 
