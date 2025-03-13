@@ -53,7 +53,9 @@ const Physics = (entities, { time, dispatch }) => {
     console.log(`Bounce #${entities.ball.bounceCount} detected`);
     
     // Dispatch event for bounce
-    dispatch({ type: 'ball-bounce' });
+    if (dispatch) {
+      dispatch({ type: 'ball-bounce' });
+    }
     
     // Apply extra bounce force if the bounce is weak
     if (Math.abs(ball.velocity.y) < 1) {
@@ -89,7 +91,9 @@ const Physics = (entities, { time, dispatch }) => {
     entities.ball.wasOnFloor = false;
     entities.ball.lastBounceTime = 0;
     
-    dispatch({ type: 'ball-reset' });
+    if (dispatch) {
+      dispatch({ type: 'ball-reset' });
+    }
   }
   
   return entities;
@@ -192,7 +196,9 @@ const GameScreen = ({ route, navigation }) => {
     
     // Set world gravity - CRITICAL: Calibrate for mobile
     world.gravity.x = levelConfig.gravity.x;
-    world.gravity.y = Platform.OS === 'ios' ? levelConfig.gravity.y * 0.7 : levelConfig.gravity.y * 0.6;
+    // Adjust gravity based on platform
+    const gravityFactor = Platform.OS === 'ios' ? 0.7 : 0.6;
+    world.gravity.y = levelConfig.gravity.y * gravityFactor;
     
     console.log(`World gravity set to: (${world.gravity.x}, ${world.gravity.y})`);
     
@@ -209,7 +215,6 @@ const GameScreen = ({ route, navigation }) => {
         label: 'ball',
         isStatic: true,       // Ball is static until shot
         density: 0.0005,      // Very low density for better mobile physics
-        inertia: Infinity,    // Prevent rotation slowdown
         sleepThreshold: 0     // Never sleep
       }
     );
