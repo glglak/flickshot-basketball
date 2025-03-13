@@ -37,6 +37,9 @@ const GameScreen = ({ route, navigation }) => {
   const [showTutorial, setShowTutorial] = useState(true);
   const [tutorialText, setTutorialText] = useState('');
   
+  // Store aim coordinates
+  const [aimCoordinates, setAimCoordinates] = useState({ startX: 0, startY: 0, currentX: 0, currentY: 0 });
+  
   const gameEngineRef = useRef(null);
   const ballPositionRef = useRef({ x: width * 0.2, y: height - FLOOR_HEIGHT - BALL_RADIUS });
   
@@ -209,25 +212,46 @@ const GameScreen = ({ route, navigation }) => {
     };
   }, [level]);
   
-  // Pan responder for shooting the ball
+  // Pan responder for shooting the ball - COMPLETELY REWRITTEN
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => {
+    onPanResponderGrant: (evt) => {
+      const { locationX, locationY } = evt.nativeEvent;
       setIsAiming(true);
       setTrajectoryPoints([]);
       setShowTutorial(false);
-    },
-    onPanResponderMove: (_, gesture) => {
-      const { dx, dy } = gesture;
       
-      // Calculate trajectory points for visual feedback
-      calculateTrajectoryPoints(dx, dy);
+      // Store the initial touch position
+      setAimCoordinates({
+        startX: locationX,
+        startY: locationY,
+        currentX: locationX,
+        currentY: locationY
+      });
     },
-    onPanResponderRelease: (_, gesture) => {
-      const { dx, dy } = gesture;
+    onPanResponderMove: (evt, gesture) => {
+      const { locationX, locationY } = evt.nativeEvent;
       
-      // Only shoot if we've dragged enough
-      if (Math.sqrt(dx * dx + dy * dy) > 20) {
+      // Update the current touch position
+      setAimCoordinates(prev => ({
+        ...prev,
+        currentX: locationX,
+        currentY: locationY
+      }));
+      
+      // Calculate trajectory based on the current aiming vector
+      calculateTrajectory(locationX, locationY);
+    },
+    onPanResponderRelease: (evt, gesture) => {
+      const { startX, startY, currentX, currentY } = aimCoordinates;
+      
+      // Calculate the drag vector
+      const dx = currentX - startX;
+      const dy = currentY - startY;
+      
+      // Only shoot if the drag distance is significant
+      const dragDistance = Math.sqrt(dx * dx + dy * dy);
+      if (dragDistance > 20) {
         shootBall(dx, dy);
       }
       
@@ -236,68 +260,81 @@ const GameScreen = ({ route, navigation }) => {
     }
   });
   
-  // Helper function to calculate trajectory points - FIXED
-  const calculateTrajectoryPoints = (dx, dy) => {
-    // Generate an array of points to show the predicted trajectory
+  // Calculate trajectory based on aim coordinates - COMPLETELY REWRITTEN
+  const calculateTrajectory = (currentX, currentY) => {
+    if (!aimCoordinates.startX) return;
+    
+    // Vector from current position to start position (drag direction)
+    const dx = currentX - aimCoordinates.startX;
+    const dy = currentY - aimCoordinates.startY;
+    
+    // Only calculate if there's enough drag distance
+    const dragDistance = Math.sqrt(dx * dx + dy * dy);
+    if (dragDistance < 10) return;
+    
+    // Prepare trajectory points array
     const points = [];
     
-    // Invert dx and dy for more intuitive controls
-    // This makes the ball go in the opposite direction of the swipe
-    const invertedDx = -dx;
-    const invertedDy = -dy;
+    // Ball starting position
+    const ballX = ballPositionRef.current.x;
+    const ballY = ballPositionRef.current.y;
     
-    // Calculate force based on swipe distance
-    const force = { 
-      x: invertedDx / 15, 
-      y: invertedDy / 15 
-    };
+    // Scale factor for force (can be adjusted to control sensitivity)
+    const forceScale = 0.15;
     
-    // Get the ball's starting position
-    const startPos = { ...ballPositionRef.current };
+    // Force vector (opposite to drag direction)
+    const forceX = -dx * forceScale;
+    const forceY = -dy * forceScale;
     
-    // Reduced gravity factor for better trajectory visualization
-    const gravityFactor = 0.03;
+    // Simplified physics simulation to show trajectory
+    // Time step
+    const timeStep = 0.2;
+    // Gravity
+    const gravity = 0.2;
     
-    // Generate points along the predicted trajectory
-    for (let i = 0; i < 15; i++) {
-      const step = i * 5;
-      points.push({
-        x: startPos.x + (force.x * step),
-        y: startPos.y + (force.y * step) + (0.5 * gravityFactor * step * step)
-      });
+    let vx = forceX;
+    let vy = forceY;
+    let x = ballX;
+    let y = ballY;
+    
+    // Generate trajectory points
+    for (let i = 0; i < 20; i++) {
+      // Add point
+      points.push({ x, y });
+      
+      // Update position using velocity
+      x += vx * timeStep;
+      y += vy * timeStep;
+      
+      // Update velocity due to gravity
+      vy += gravity * timeStep;
     }
     
     setTrajectoryPoints(points);
   };
   
-  // Helper function for shooting the ball - FIXED
+  // Helper function for shooting the ball - COMPLETELY REWRITTEN
   const shootBall = (dx, dy) => {
     if (!entities || shotsRemaining <= 0) return;
     
     // Play sound
     playShootSound();
     
-    // Make the ball dynamic and apply force
+    // Make the ball dynamic
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
-    // Invert dx and dy for more intuitive controls
-    const invertedDx = -dx;
-    const invertedDy = -dy;
+    // Calculate force magnitude (scaled and capped)
+    const dragDistance = Math.sqrt(dx * dx + dy * dy);
+    const forceMagnitude = Math.min(dragDistance * 0.005, 0.1);
     
-    // Calculate force magnitude based on swipe distance
-    // Capped to prevent extremely powerful shots
-    const forceMagnitude = Math.min(Math.sqrt(invertedDx * invertedDx + invertedDy * invertedDy) / 8, 25);
-    
-    // Calculate force angle
-    const forceAngle = Math.atan2(invertedDy, invertedDx);
-    
-    // Apply force to the ball
+    // Apply force in the opposite direction of the drag
     Matter.Body.applyForce(ball, ball.position, {
-      x: forceMagnitude * Math.cos(forceAngle),
-      y: forceMagnitude * Math.sin(forceAngle)
+      x: -dx * forceMagnitude,
+      y: -dy * forceMagnitude
     });
     
+    // Decrement shots remaining
     setShotsRemaining(prevShots => prevShots - 1);
   };
   
@@ -358,7 +395,11 @@ const GameScreen = ({ route, navigation }) => {
           key={index}
           style={[
             styles.trajectoryPoint,
-            { left: point.x - 2, top: point.y - 2 }
+            { 
+              left: point.x - 2, 
+              top: point.y - 2,
+              opacity: 1 - (index / trajectoryPoints.length)  // Fade out dots further along trajectory
+            }
           ]}
         />
       ))}
@@ -425,7 +466,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 140, 0, 0.5)',
+    backgroundColor: 'rgba(255, 140, 0, 0.8)',
   },
   uiContainer: {
     flex: 1,
