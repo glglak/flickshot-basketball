@@ -113,6 +113,20 @@ const GameScreen = ({ route, navigation }) => {
       { 
         isStatic: true,
         label: 'floor',
+        restitution: 0.5, // Add bounce to the floor
+      }
+    );
+    
+    // Create invisible barrier 100px below the floor to catch balls
+    const bottomBarrier = Matter.Bodies.rectangle(
+      width / 2,
+      height + 100,
+      width * 2,
+      20,
+      { 
+        isStatic: true,
+        label: 'bottomBarrier',
+        restitution: 0.5,
       }
     );
     
@@ -121,24 +135,24 @@ const GameScreen = ({ route, navigation }) => {
       -10,
       height / 2,
       20,
-      height,
-      { isStatic: true, label: 'wall' }
+      height * 2,
+      { isStatic: true, label: 'wall', restitution: 0.5 }
     );
     
     const rightWall = Matter.Bodies.rectangle(
       width + 10,
       height / 2,
       20,
-      height,
-      { isStatic: true, label: 'wall' }
+      height * 2,
+      { isStatic: true, label: 'wall', restitution: 0.5 }
     );
     
     const ceiling = Matter.Bodies.rectangle(
       width / 2,
       -10,
-      width,
+      width * 2,
       20,
-      { isStatic: true, label: 'ceiling' }
+      { isStatic: true, label: 'ceiling', restitution: 0.5 }
     );
     
     // Create hoop
@@ -158,7 +172,7 @@ const GameScreen = ({ route, navigation }) => {
     );
     
     // Add all bodies to the world
-    Matter.Composite.add(world, [ball, floor, leftWall, rightWall, ceiling, hoopSensor]);
+    Matter.Composite.add(world, [ball, floor, leftWall, rightWall, ceiling, bottomBarrier, hoopSensor]);
     
     // Add any obstacles from level config
     if (levelConfig.obstacles) {
@@ -172,7 +186,7 @@ const GameScreen = ({ route, navigation }) => {
             isStatic: true,
             label: 'obstacle',
             friction: obstacle.friction || 0.1,
-            restitution: obstacle.restitution || 0.1,
+            restitution: obstacle.restitution || 0.3, // Increase bounciness of obstacles
           }
         );
         Matter.Composite.add(world, obstacleBody);
@@ -207,6 +221,15 @@ const GameScreen = ({ route, navigation }) => {
           } else {
             resetBall();
           }
+        }
+        
+        // Check if ball hit the bottom barrier and reset
+        if (
+          (bodyA.label === 'ball' && bodyB.label === 'bottomBarrier') ||
+          (bodyA.label === 'bottomBarrier' && bodyB.label === 'ball')
+        ) {
+          // Ball went too far down, reset it
+          resetBall();
         }
       });
     });
@@ -367,10 +390,16 @@ const GameScreen = ({ route, navigation }) => {
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
+    // Safety check for downward swipes
+    const isDownwardSwipe = dy > 0;
+    
     // Calculate force magnitude (scaled and capped)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
-    // Reduce force to make shots less powerful
-    const forceMagnitude = Math.min(dragDistance * 0.0015, 0.03);
+    
+    // Reduce force for downward swipes to prevent ball from going too fast downward
+    const forceMagnitude = isDownwardSwipe
+      ? Math.min(dragDistance * 0.0005, 0.01) // Much smaller force for downward swipes
+      : Math.min(dragDistance * 0.0015, 0.03); // Normal force for other directions
     
     // Apply force in the opposite direction of the drag
     Matter.Body.applyForce(ball, ball.position, {
