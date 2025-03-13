@@ -22,6 +22,24 @@ const FLOOR_HEIGHT = 50;
 const Physics = (entities, { time }) => {
   const engine = entities.physics.engine;
   Matter.Engine.update(engine, time.delta);
+  
+  // Check if ball has gone off-screen and reset if needed
+  const ball = entities.ball.body;
+  if (
+    ball.position.y > height + 100 || 
+    ball.position.y < -100 ||
+    ball.position.x > width + 100 ||
+    ball.position.x < -100
+  ) {
+    // Ball is off-screen, reset it
+    Matter.Body.setPosition(ball, {
+      x: width * 0.2,
+      y: height - FLOOR_HEIGHT - BALL_RADIUS
+    });
+    Matter.Body.setVelocity(ball, { x: 0, y: 0 });
+    Matter.Body.setStatic(ball, true);
+  }
+  
   return entities;
 };
 
@@ -70,7 +88,7 @@ const GameScreen = ({ route, navigation }) => {
     
     // Set world gravity
     world.gravity.x = levelConfig.gravity.x;
-    world.gravity.y = levelConfig.gravity.y;
+    world.gravity.y = levelConfig.gravity.y * 0.5; // Reduce gravity to make game easier
     
     // Create ball
     const ball = Matter.Bodies.circle(
@@ -98,6 +116,31 @@ const GameScreen = ({ route, navigation }) => {
       }
     );
     
+    // Create walls to prevent ball from leaving screen
+    const leftWall = Matter.Bodies.rectangle(
+      -10,
+      height / 2,
+      20,
+      height,
+      { isStatic: true, label: 'wall' }
+    );
+    
+    const rightWall = Matter.Bodies.rectangle(
+      width + 10,
+      height / 2,
+      20,
+      height,
+      { isStatic: true, label: 'wall' }
+    );
+    
+    const ceiling = Matter.Bodies.rectangle(
+      width / 2,
+      -10,
+      width,
+      20,
+      { isStatic: true, label: 'ceiling' }
+    );
+    
     // Create hoop
     const hoopPosition = levelConfig.hoopPosition;
     const hoopSize = { width: 100, height: 70 };
@@ -115,7 +158,7 @@ const GameScreen = ({ route, navigation }) => {
     );
     
     // Add all bodies to the world
-    Matter.Composite.add(world, [ball, floor, hoopSensor]);
+    Matter.Composite.add(world, [ball, floor, leftWall, rightWall, ceiling, hoopSensor]);
     
     // Add any obstacles from level config
     if (levelConfig.obstacles) {
@@ -212,7 +255,7 @@ const GameScreen = ({ route, navigation }) => {
     };
   }, [level]);
   
-  // Pan responder for shooting the ball - COMPLETELY REWRITTEN
+  // Pan responder for shooting the ball
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt) => {
@@ -260,7 +303,7 @@ const GameScreen = ({ route, navigation }) => {
     }
   });
   
-  // Calculate trajectory based on aim coordinates - COMPLETELY REWRITTEN
+  // Calculate trajectory based on aim coordinates
   const calculateTrajectory = (currentX, currentY) => {
     if (!aimCoordinates.startX) return;
     
@@ -280,7 +323,7 @@ const GameScreen = ({ route, navigation }) => {
     const ballY = ballPositionRef.current.y;
     
     // Scale factor for force (can be adjusted to control sensitivity)
-    const forceScale = 0.15;
+    const forceScale = 0.1;
     
     // Force vector (opposite to drag direction)
     const forceX = -dx * forceScale;
@@ -290,7 +333,7 @@ const GameScreen = ({ route, navigation }) => {
     // Time step
     const timeStep = 0.2;
     // Gravity
-    const gravity = 0.2;
+    const gravity = 0.1; // Reduced from previous version
     
     let vx = forceX;
     let vy = forceY;
@@ -313,7 +356,7 @@ const GameScreen = ({ route, navigation }) => {
     setTrajectoryPoints(points);
   };
   
-  // Helper function for shooting the ball - COMPLETELY REWRITTEN
+  // Helper function for shooting the ball
   const shootBall = (dx, dy) => {
     if (!entities || shotsRemaining <= 0) return;
     
@@ -326,7 +369,8 @@ const GameScreen = ({ route, navigation }) => {
     
     // Calculate force magnitude (scaled and capped)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
-    const forceMagnitude = Math.min(dragDistance * 0.005, 0.1);
+    // Reduce force to make shots less powerful
+    const forceMagnitude = Math.min(dragDistance * 0.0015, 0.03);
     
     // Apply force in the opposite direction of the drag
     Matter.Body.applyForce(ball, ball.position, {
