@@ -236,25 +236,41 @@ const GameScreen = ({ route, navigation }) => {
     }
   });
   
-  // Helper function to calculate trajectory points
+  // Helper function to calculate trajectory points - FIXED
   const calculateTrajectoryPoints = (dx, dy) => {
     // Generate an array of points to show the predicted trajectory
     const points = [];
-    const force = { x: -dx / 20, y: -dy / 20 };
+    
+    // Invert dx and dy for more intuitive controls
+    // This makes the ball go in the opposite direction of the swipe
+    const invertedDx = -dx;
+    const invertedDy = -dy;
+    
+    // Calculate force based on swipe distance
+    const force = { 
+      x: invertedDx / 15, 
+      y: invertedDy / 15 
+    };
+    
+    // Get the ball's starting position
     const startPos = { ...ballPositionRef.current };
     
-    // Simplified trajectory prediction
-    for (let i = 0; i < 10; i++) {
+    // Reduced gravity factor for better trajectory visualization
+    const gravityFactor = 0.03;
+    
+    // Generate points along the predicted trajectory
+    for (let i = 0; i < 15; i++) {
+      const step = i * 5;
       points.push({
-        x: startPos.x + (force.x * i * 8),
-        y: startPos.y + (force.y * i * 8) + (0.5 * 0.098 * Math.pow(i * 8, 2))
+        x: startPos.x + (force.x * step),
+        y: startPos.y + (force.y * step) + (0.5 * gravityFactor * step * step)
       });
     }
     
     setTrajectoryPoints(points);
   };
   
-  // Helper function for shooting the ball
+  // Helper function for shooting the ball - FIXED
   const shootBall = (dx, dy) => {
     if (!entities || shotsRemaining <= 0) return;
     
@@ -265,13 +281,21 @@ const GameScreen = ({ route, navigation }) => {
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
-    // Force is inverse to the drag direction and proportional to drag distance
-    const forceMagnitude = Math.min(Math.sqrt(dx * dx + dy * dy) / 10, 20);
-    const forceAngle = Math.atan2(dy, dx);
+    // Invert dx and dy for more intuitive controls
+    const invertedDx = -dx;
+    const invertedDy = -dy;
     
+    // Calculate force magnitude based on swipe distance
+    // Capped to prevent extremely powerful shots
+    const forceMagnitude = Math.min(Math.sqrt(invertedDx * invertedDx + invertedDy * invertedDy) / 8, 25);
+    
+    // Calculate force angle
+    const forceAngle = Math.atan2(invertedDy, invertedDx);
+    
+    // Apply force to the ball
     Matter.Body.applyForce(ball, ball.position, {
-      x: -forceMagnitude * Math.cos(forceAngle),
-      y: -forceMagnitude * Math.sin(forceAngle)
+      x: forceMagnitude * Math.cos(forceAngle),
+      y: forceMagnitude * Math.sin(forceAngle)
     });
     
     setShotsRemaining(prevShots => prevShots - 1);
