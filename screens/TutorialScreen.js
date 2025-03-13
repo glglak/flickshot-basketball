@@ -10,31 +10,31 @@ const TutorialScreen = ({ navigation }) => {
     {
       id: 1,
       title: 'Aim & Shoot',
-      description: 'Swipe backward to aim, then release to shoot the ball. The longer you swipe, the more power you'll apply.',
+      description: "Swipe backward to aim, then release to shoot the ball. The longer you swipe, the more power you'll apply.",
       icon: 'hand-point-up',
     },
     {
       id: 2,
       title: 'Watch the Trajectory',
-      description: 'As you aim, you'll see a dotted line showing the predicted path. Use this to perfect your shots!',
+      description: "As you aim, you'll see a dotted line showing the predicted path. Use this to perfect your shots!",
       icon: 'route',
     },
     {
       id: 3,
       title: 'Navigate Obstacles',
-      description: 'Later levels feature obstacles you'll need to shoot around or use strategically to bank shots.',
+      description: "Later levels feature obstacles you'll need to shoot around or use strategically to bank shots.",
       icon: 'shapes',
     },
     {
       id: 4,
       title: 'Earn Stars',
-      description: 'Each level awards up to 3 stars based on your score. Higher scores come from fewer attempts and trick shots!',
+      description: "Each level awards up to 3 stars based on your score. Higher scores come from fewer attempts and trick shots!",
       icon: 'star',
     },
     {
       id: 5,
       title: 'Unlock Levels',
-      description: 'Successfully complete a level to unlock the next one. The game gets progressively more challenging!',
+      description: "Successfully complete a level to unlock the next one. The game gets progressively more challenging!",
       icon: 'unlock',
     },
   ];
