@@ -40,6 +40,11 @@ const Physics = (entities, { time }) => {
     Matter.Body.setStatic(ball, true);
   }
   
+  // DEBUG: Log ball position and velocity occasionally to troubleshoot
+  if (Math.random() < 0.01) {
+    console.log('Ball position:', ball.position, 'velocity:', ball.velocity, 'isStatic:', ball.isStatic);
+  }
+  
   return entities;
 };
 
@@ -67,9 +72,23 @@ const GameScreen = ({ route, navigation }) => {
     
     try {
       const { sound } = await Audio.Sound.createAsync(
-        require('../assets/sounds/button_click.mp3') // Replace with actual shoot sound
+        require('../assets/sounds/button_click.mp3'),
+        { shouldPlay: true }
       );
-      await sound.playAsync();
+      
+      // Set up an error handler for the sound
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.error) {
+          console.log('Sound error:', status.error);
+        }
+      });
+      
+      // Unload sound when finished to prevent memory leaks
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          sound.unloadAsync().catch(e => console.log('Error unloading sound:', e));
+        }
+      });
     } catch (error) {
       console.log('Error playing sound:', error);
     }
@@ -88,7 +107,7 @@ const GameScreen = ({ route, navigation }) => {
     
     // Set world gravity
     world.gravity.x = levelConfig.gravity.x;
-    world.gravity.y = levelConfig.gravity.y * 0.5; // Reduce gravity to make game easier
+    world.gravity.y = levelConfig.gravity.y; // Restore normal gravity for better physics
     
     // Create ball
     const ball = Matter.Bodies.circle(
@@ -101,6 +120,7 @@ const GameScreen = ({ route, navigation }) => {
         frictionAir: 0.0005,
         label: 'ball',
         isStatic: true, // Ball is static until shot
+        density: 0.001, // Lower density to make the ball lighter
       }
     );
     
@@ -113,7 +133,8 @@ const GameScreen = ({ route, navigation }) => {
       { 
         isStatic: true,
         label: 'floor',
-        restitution: 0.5, // Add bounce to the floor
+        restitution: 0.7, // Increased bounce for the floor
+        friction: 0.1,    // Added some friction
       }
     );
     
@@ -186,7 +207,7 @@ const GameScreen = ({ route, navigation }) => {
             isStatic: true,
             label: 'obstacle',
             friction: obstacle.friction || 0.1,
-            restitution: obstacle.restitution || 0.3, // Increase bounciness of obstacles
+            restitution: obstacle.restitution || 0.3,
           }
         );
         Matter.Composite.add(world, obstacleBody);
@@ -231,6 +252,9 @@ const GameScreen = ({ route, navigation }) => {
           // Ball went too far down, reset it
           resetBall();
         }
+        
+        // Debug collision events
+        console.log('Collision between', bodyA.label, 'and', bodyB.label);
       });
     });
     
@@ -261,8 +285,8 @@ const GameScreen = ({ route, navigation }) => {
       levelConfig.obstacles.forEach((obstacle, index) => {
         initialEntities[`obstacle_${index}`] = {
           body: world.bodies.find(b => b.label === 'obstacle' && 
-                                 b.position.x === obstacle.x && 
-                                 b.position.y === obstacle.y),
+                               b.position.x === obstacle.x && 
+                               b.position.y === obstacle.y),
           size: { width: obstacle.width, height: obstacle.height },
           color: obstacle.color || '#444',
           renderer: Floor // Reusing Floor component for obstacles
@@ -356,7 +380,7 @@ const GameScreen = ({ route, navigation }) => {
     // Time step
     const timeStep = 0.2;
     // Gravity
-    const gravity = 0.1; // Reduced from previous version
+    const gravity = 0.1;
     
     let vx = forceX;
     let vy = forceY;
@@ -390,19 +414,18 @@ const GameScreen = ({ route, navigation }) => {
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
-    // Safety check for downward swipes
-    const isDownwardSwipe = dy > 0;
-    
-    // Calculate force magnitude (scaled and capped)
+    // Calculate force magnitude (increased from original)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
     
-    // Reduce force for downward swipes to prevent ball from going too fast downward
-    const forceMagnitude = isDownwardSwipe
-      ? Math.min(dragDistance * 0.0005, 0.01) // Much smaller force for downward swipes
-      : Math.min(dragDistance * 0.0015, 0.03); // Normal force for other directions
+    // Apply force in the opposite direction of the drag (increased force magnitude)
+    const forceMagnitude = Math.min(dragDistance * 0.003, 0.05); // Increased the force magnitude
     
-    // Apply force in the opposite direction of the drag
     Matter.Body.applyForce(ball, ball.position, {
+      x: -dx * forceMagnitude,
+      y: -dy * forceMagnitude
+    });
+    
+    console.log('Shot applied force:', {
       x: -dx * forceMagnitude,
       y: -dy * forceMagnitude
     });
