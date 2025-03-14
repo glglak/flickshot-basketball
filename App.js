@@ -3,6 +3,14 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LogBox } from 'react-native';
+
+// Ignore specific warnings that might be coming from dependencies
+LogBox.ignoreLogs([
+  'Possible Unhandled Promise Rejection',
+  'Unable to activate keep awake',
+  'None of the available extractors'
+]);
 
 // Import screens
 import HomeScreen from './screens/HomeScreen';
