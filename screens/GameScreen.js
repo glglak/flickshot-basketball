@@ -121,7 +121,7 @@ const resetBall = (entities) => {
   return entities;
 };
 
-// Ball renderer component - extremely simplified
+// Ball renderer component - improved with basketball appearance
 const SimpleBall = (props) => {
   const { x, y, size, rotation } = props;
   
@@ -139,9 +139,9 @@ const SimpleBall = (props) => {
         }
       ]}
     >
-      <View style={styles.ballInner}>
-        <View style={styles.ballLine} />
-      </View>
+      {/* Horizontal lines on the basketball */}
+      <View style={[styles.ballLine, { transform: [{ rotate: '0deg' }] }]} />
+      <View style={[styles.ballLine, { transform: [{ rotate: '90deg' }] }]} />
     </View>
   );
 };
@@ -161,22 +161,51 @@ const SimpleFloor = (props) => {
   );
 };
 
-// Hoop renderer
+// Improved hoop renderer
 const SimpleHoop = (props) => {
   const { position, size } = props;
   
   return (
-    <View
-      style={[
-        styles.hoop,
-        {
-          left: position.x - size.width/2,
-          top: position.y - size.height/2,
-          width: size.width,
-          height: size.height
-        }
-      ]}
-    />
+    <View style={styles.hoopContainer}>
+      {/* Backboard */}
+      <View
+        style={[
+          styles.backboard,
+          {
+            left: position.x - size.width/2,
+            top: position.y - size.height,
+            width: size.width * 0.8,
+            height: size.height * 0.7
+          }
+        ]}
+      />
+      
+      {/* Rim */}
+      <View
+        style={[
+          styles.rim,
+          {
+            left: position.x - size.width/4,
+            top: position.y - 5,
+            width: size.width/2,
+            height: 10
+          }
+        ]}
+      />
+      
+      {/* Net (simplified) */}
+      <View
+        style={[
+          styles.net,
+          {
+            left: position.x - size.width/6,
+            top: position.y + 5,
+            width: size.width/3,
+            height: size.height/2
+          }
+        ]}
+      />
+    </View>
   );
 };
 
@@ -237,6 +266,23 @@ const GameScreen = ({ route, navigation }) => {
       setDebugInfo(prev => ({...prev, bounces: prev.bounces + 1}));
     } else if (e.type === 'ball-reset') {
       setDebugInfo(prev => ({...prev, bounces: 0}));
+    } else if (e.type === 'score') {
+      // Increase the score when the ball goes through the hoop
+      setScore(prev => prev + calculateShotScore());
+      
+      // Check if level is complete
+      if (shotsRemaining <= 1) {
+        // Navigate to results screen after a short delay
+        setTimeout(() => {
+          navigation.replace('Result', {
+            level,
+            score: score + calculateShotScore(),
+            isLevelCompleted: true,
+          });
+        }, 1000);
+      } else {
+        resetBallState();
+      }
     }
   };
   
@@ -285,6 +331,44 @@ const GameScreen = ({ route, navigation }) => {
     
     setEntities(initialEntities);
   }, [level]);
+  
+  // Check if ball passes through hoop - simplified scoring logic
+  useEffect(() => {
+    if (!entities || !entities.ball || entities.ball.isStatic) return;
+    
+    const checkHoopCollision = () => {
+      if (!entities || !entities.ball) return;
+      
+      const ball = entities.ball;
+      const hoop = entities.hoop;
+      
+      // Ball's current position
+      const ballX = ball.x;
+      const ballY = ball.y;
+      
+      // Hoop's position
+      const hoopX = hoop.position.x;
+      const hoopY = hoop.position.y;
+      
+      // Check if ball passes through the hoop
+      const isInHoopX = Math.abs(ballX - hoopX) < hoop.size.width / 4;
+      const isAtHoopY = Math.abs(ballY - hoopY) < 10; // Close to rim height
+      const isMovingDown = ball.vy > 0; // Ball is moving downward
+      
+      if (isInHoopX && isAtHoopY && isMovingDown) {
+        // Score!
+        console.log("SCORE! Ball went through the hoop");
+        if (gameEngineRef.current) {
+          gameEngineRef.current.dispatch({ type: 'score' });
+        }
+      }
+    };
+    
+    // Check for scoring several times per second
+    const intervalId = setInterval(checkHoopCollision, 100);
+    
+    return () => clearInterval(intervalId);
+  }, [entities]);
   
   // Pan responder for shooting
   const panResponder = PanResponder.create({
@@ -517,24 +601,21 @@ const styles = StyleSheet.create({
   },
   ball: {
     position: 'absolute',
-    backgroundColor: '#FF8C00',
+    backgroundColor: '#FF8C00', // Orange basketball color
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 5,
-  },
-  ballInner: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 100,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   ballLine: {
-    width: '80%',
+    position: 'absolute',
+    width: '90%',
     height: 2,
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    alignSelf: 'center',
   },
   floor: {
     position: 'absolute',
@@ -542,10 +623,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
     left: 0,
   },
-  hoop: {
+  hoopContainer: {
     position: 'absolute',
-    backgroundColor: 'red',
-    borderRadius: 5,
+    width: 1,
+    height: 1,
+  },
+  backboard: {
+    position: 'absolute',
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  rim: {
+    position: 'absolute',
+    backgroundColor: '#FF4500', // Orange-red rim
+    borderRadius: 4,
+  },
+  net: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF80', // Semi-transparent white
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
   },
   trajectoryPoint: {
     position: 'absolute',
