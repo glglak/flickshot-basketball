@@ -31,8 +31,8 @@ const CustomPhysics = (entities, { time, dispatch }) => {
   const pos = { x: ball.x, y: ball.y };
   const vel = { x: ball.vx, y: ball.vy };
   
-  // Apply gravity
-  vel.y += 0.5; // Stronger gravity
+  // Apply gravity - increase for faster fall
+  vel.y += 1.2; // Stronger gravity for faster bounce
   
   // Update position based on velocity
   pos.x += vel.x;
@@ -379,9 +379,10 @@ const GameScreen = ({ route, navigation }) => {
       setTrajectoryPoints([]);
       setShowTutorial(false);
       
+      // Start from the ball position, not touch position
       setAimCoordinates({
-        startX: locationX,
-        startY: locationY,
+        startX: width * 0.2,  // Ball's X position
+        startY: height - FLOOR_HEIGHT - BALL_RADIUS, // Ball's Y position
         currentX: locationX,
         currentY: locationY
       });
@@ -436,7 +437,7 @@ const GameScreen = ({ route, navigation }) => {
     
     // Simple projectile simulation
     const timeStep = 0.1;
-    const gravity = 0.5;
+    const gravity = 1.2; // Match the physics gravity
     
     let vx = forceX;
     let vy = forceY;
@@ -468,8 +469,8 @@ const GameScreen = ({ route, navigation }) => {
     
     // Update ball state
     entities.ball.isStatic = false;
-    entities.ball.vx = -dx * forceMagnitude * 0.015;
-    entities.ball.vy = -dy * forceMagnitude * 0.015;
+    entities.ball.vx = -dx * forceMagnitude * 0.02; // Increased for faster movement
+    entities.ball.vy = -dy * forceMagnitude * 0.02; // Increased for faster movement
     
     console.log('Shot velocity set:', {
       x: entities.ball.vx,
@@ -590,7 +591,7 @@ const GameScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#87CEEB', // Sky blue background
   },
   gameEngine: {
     position: 'absolute',
@@ -641,9 +642,13 @@ const styles = StyleSheet.create({
   },
   net: {
     position: 'absolute',
-    backgroundColor: '#FFFFFF80', // Semi-transparent white
+    backgroundColor: '#FFFFFF', // Solid white
     borderBottomLeftRadius: 10,
     borderBottomRightRadius: 10,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderLeftColor: 'rgba(0,0,0,0.1)',
+    borderRightColor: 'rgba(0,0,0,0.1)',
   },
   trajectoryPoint: {
     position: 'absolute',
