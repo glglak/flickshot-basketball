@@ -18,85 +18,104 @@ const BALL_SIZE = 40;
 const BALL_RADIUS = BALL_SIZE / 2;
 const FLOOR_HEIGHT = 50;
 
-// Physics configuration
-const Physics = (entities, { time, dispatch }) => {
+// Very important! Custom physics for reliable bouncing
+const CustomPhysics = (entities, { time, dispatch }) => {
+  // Get the standard physics engine
   const engine = entities.physics.engine;
   
-  // Use a smaller time step for mobile to prevent physics tunneling issues
-  const timeStep = Math.min(time.delta, 16.67); // Cap at ~60fps equivalent
-  Matter.Engine.update(engine, timeStep);
-  
-  // Get ball entity
+  // Get current ball state
   const ball = entities.ball.body;
+  const ballIsStatic = ball.isStatic;
   
-  // Check if ball is moving too slowly and stuck in the air
-  if (!ball.isStatic && Math.abs(ball.velocity.x) < 0.5 && Math.abs(ball.velocity.y) < 0.5) {
-    const timeSinceLastBounce = Date.now() - (entities.ball.lastBounceTime || 0);
+  // If ball is in motion, handle custom physics
+  if (!ballIsStatic) {
+    // Only update Matter physics once per frame with small time steps
+    const timeScale = 0.5; // Slower physics for better stability
+    Matter.Engine.update(engine, time.delta * timeScale);
     
-    // If the ball has been moving very slowly for a while (stuck), apply a small impulse
-    if (timeSinceLastBounce > 1000) {
-      Matter.Body.applyForce(ball, ball.position, { x: 0, y: 0.001 });
-      entities.ball.lastBounceTime = Date.now();
-      console.log("Anti-stuck impulse applied");
-    }
-  }
-  
-  // Check for floor contact to log bounce events
-  const inContactWithFloor = engine.world.bodies.some(body => 
-    body.label === 'floor' && 
-    Matter.Collision.collides(ball, body, null) !== null
-  );
-  
-  if (inContactWithFloor && !entities.ball.wasOnFloor) {
-    entities.ball.lastBounceTime = Date.now();
-    entities.ball.bounceCount = (entities.ball.bounceCount || 0) + 1;
-    console.log(`Bounce #${entities.ball.bounceCount} detected`);
+    // Store current position
+    entities.ball.prevPosition = entities.ball.prevPosition || { x: ball.position.x, y: ball.position.y };
     
-    // Dispatch event for bounce
-    if (dispatch) {
-      dispatch({ type: 'ball-bounce' });
+    // Store velocity
+    const velocity = {
+      x: ball.velocity.x,
+      y: ball.velocity.y
+    };
+    
+    // CRITICAL: Force-based bounce simulation when hitting floor
+    // This directly manipulates velocity rather than relying on Matter.js restitution
+    if (ball.position.y > height - FLOOR_HEIGHT - BALL_RADIUS) {
+      // Ball hit the floor
+      if (velocity.y > 0) { // Only if moving downward
+        console.log("FLOOR COLLISION DETECTED - MANUAL BOUNCE");
+        
+        // Manual "bounce" by reversing velocity with damping
+        const bounceFactor = 0.8; // Higher values = more bounce
+        
+        Matter.Body.setVelocity(ball, {
+          x: velocity.x * 0.98, // slight horizontal damping
+          y: -velocity.y * bounceFactor // reverse vertical with bounce factor
+        });
+        
+        // Log the bounce for debugging
+        if (dispatch) {
+          dispatch({ type: 'ball-bounce' });
+        }
+      }
     }
     
-    // Apply extra bounce force if the bounce is weak
-    if (Math.abs(ball.velocity.y) < 1) {
-      Matter.Body.setVelocity(ball, {
-        x: ball.velocity.x,
-        y: ball.velocity.y * -1.5 // Extra bounce boost
-      });
-      console.log("Extra bounce force applied");
-    }
-  }
-  
-  // Update floor contact state
-  entities.ball.wasOnFloor = inContactWithFloor;
-  
-  // Check if ball has gone off-screen and reset if needed
-  if (
-    ball.position.y > height + 100 || 
-    ball.position.y < -100 ||
-    ball.position.x > width + 100 ||
-    ball.position.x < -100
-  ) {
-    // Ball is off-screen, reset it
-    Matter.Body.setPosition(ball, {
-      x: width * 0.2,
-      y: height - FLOOR_HEIGHT - BALL_RADIUS
+    // Apply a constant gravity force (more reliable than Matter.js gravity)
+    Matter.Body.applyForce(ball, ball.position, {
+      x: 0,
+      y: 0.0005 // Custom gravity force
     });
-    Matter.Body.setVelocity(ball, { x: 0, y: 0 });
-    Matter.Body.setAngularVelocity(ball, 0);
-    Matter.Body.setStatic(ball, true);
     
-    // Reset bounce tracking
-    entities.ball.bounceCount = 0;
-    entities.ball.wasOnFloor = false;
-    entities.ball.lastBounceTime = 0;
-    
-    if (dispatch) {
-      dispatch({ type: 'ball-reset' });
+    // Check for very slow movement and reset if needed
+    const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+    if (speed < 0.1 && ball.position.y > height - FLOOR_HEIGHT - BALL_RADIUS - 5) {
+      // Ball is nearly stopped and on the floor - reset it
+      console.log("Ball stopped - resetting");
+      resetBall(entities);
     }
+    
+    // Check if ball is off-screen
+    if (
+      ball.position.y > height + 100 || 
+      ball.position.y < -100 ||
+      ball.position.x > width + 100 ||
+      ball.position.x < -100
+    ) {
+      console.log("Ball off-screen - resetting");
+      resetBall(entities);
+      if (dispatch) {
+        dispatch({ type: 'ball-reset' });
+      }
+    }
+    
+    // Update previous position for next frame
+    entities.ball.prevPosition = { 
+      x: ball.position.x, 
+      y: ball.position.y 
+    };
   }
   
   return entities;
+};
+
+// Helper function to reset ball
+const resetBall = (entities) => {
+  const ball = entities.ball.body;
+  Matter.Body.setPosition(ball, {
+    x: width * 0.2,
+    y: height - FLOOR_HEIGHT - BALL_RADIUS
+  });
+  Matter.Body.setVelocity(ball, { x: 0, y: 0 });
+  Matter.Body.setAngularVelocity(ball, 0);
+  Matter.Body.setStatic(ball, true);
+  
+  // Reset tracking data
+  entities.ball.bounceCount = 0;
+  entities.ball.prevPosition = null;
 };
 
 const GameScreen = ({ route, navigation }) => {
@@ -181,12 +200,9 @@ const GameScreen = ({ route, navigation }) => {
     // Set tutorial text
     setTutorialText(getLevelTutorial(level));
     
-    // Create physics engine with modified settings for mobile
+    // Create physics engine with basic settings
     const engine = Matter.Engine.create({ 
       enableSleeping: false,
-      constraintIterations: 4,  // Increase constraint solver iterations
-      positionIterations: 8,    // Increase position solver iterations
-      velocityIterations: 8     // Increase velocity solver iterations
     });
     
     const world = engine.world;
@@ -194,32 +210,28 @@ const GameScreen = ({ route, navigation }) => {
     // Load level configuration
     const levelConfig = generateLevel(level);
     
-    // Set world gravity - CRITICAL: Calibrate for mobile
-    world.gravity.x = levelConfig.gravity.x;
-    // Adjust gravity based on platform
-    const gravityFactor = Platform.OS === 'ios' ? 0.7 : 0.6;
-    world.gravity.y = levelConfig.gravity.y * gravityFactor;
+    // Set world gravity very low - we'll handle most physics manually
+    world.gravity.x = 0;
+    world.gravity.y = 0.1; // Very low gravity - we'll apply forces manually
     
     console.log(`World gravity set to: (${world.gravity.x}, ${world.gravity.y})`);
     
-    // Create ball with improved physics properties
+    // Create ball with special physics properties
     const ball = Matter.Bodies.circle(
       ballPositionRef.current.x,
       ballPositionRef.current.y,
       BALL_RADIUS,
       { 
-        restitution: 0.95,    // Near perfect elasticity for more bounce
-        friction: 0.01,       // Very low friction 
-        frictionAir: 0.0001,  // Minimal air resistance
-        frictionStatic: 0.2,  // Low static friction
+        restitution: 0.0,     // No built-in bounce - we handle manually
+        friction: 0.01,       // Very low friction
+        frictionAir: 0.001,   // Low air resistance
         label: 'ball',
-        isStatic: true,       // Ball is static until shot
-        density: 0.0005,      // Very low density for better mobile physics
-        sleepThreshold: 0     // Never sleep
+        isStatic: true,       // Start static until shot
+        density: 0.001,       // Very low density
       }
     );
     
-    // Create floor with improved physics
+    // Create floor
     const floor = Matter.Bodies.rectangle(
       width / 2,
       height - FLOOR_HEIGHT / 2,
@@ -228,12 +240,12 @@ const GameScreen = ({ route, navigation }) => {
       { 
         isStatic: true,
         label: 'floor',
-        restitution: 0.95,  // Maximum bounce
-        friction: 0.01,     // Very low friction
+        restitution: 0.0,  // No built-in bounce
+        friction: 0.1,
       }
     );
     
-    // Create invisible barrier 100px below the floor to catch balls
+    // Create invisible barrier below the floor to catch balls
     const bottomBarrier = Matter.Bodies.rectangle(
       width / 2,
       height + 100,
@@ -242,17 +254,16 @@ const GameScreen = ({ route, navigation }) => {
       { 
         isStatic: true,
         label: 'bottomBarrier',
-        restitution: 0.5,
       }
     );
     
-    // Create walls with high elasticity
+    // Create walls
     const leftWall = Matter.Bodies.rectangle(
       -10,
       height / 2,
       20,
       height * 2,
-      { isStatic: true, label: 'wall', restitution: 0.9, friction: 0.01 }
+      { isStatic: true, label: 'wall', friction: 0.1 }
     );
     
     const rightWall = Matter.Bodies.rectangle(
@@ -260,7 +271,7 @@ const GameScreen = ({ route, navigation }) => {
       height / 2,
       20,
       height * 2,
-      { isStatic: true, label: 'wall', restitution: 0.9, friction: 0.01 }
+      { isStatic: true, label: 'wall', friction: 0.1 }
     );
     
     const ceiling = Matter.Bodies.rectangle(
@@ -268,7 +279,7 @@ const GameScreen = ({ route, navigation }) => {
       -10,
       width * 2,
       20,
-      { isStatic: true, label: 'ceiling', restitution: 0.9, friction: 0.01 }
+      { isStatic: true, label: 'ceiling', friction: 0.1 }
     );
     
     // Create hoop
@@ -301,41 +312,20 @@ const GameScreen = ({ route, navigation }) => {
           {
             isStatic: true,
             label: 'obstacle',
-            friction: 0.01,            // Low friction
-            frictionStatic: 0.1,       // Low static friction
-            restitution: 0.9,          // High elasticity for more bounce
+            friction: 0.1,
+            restitution: 0.4,
           }
         );
         Matter.Composite.add(world, obstacleBody);
       });
     }
     
-    // Custom collision handler to enhance bounce behavior
+    // Set up collision detection for scoring and walls
     Matter.Events.on(engine, 'collisionStart', (event) => {
       const pairs = event.pairs;
       
       pairs.forEach((pair) => {
         const { bodyA, bodyB } = pair;
-        const ball = bodyA.label === 'ball' ? bodyA : (bodyB.label === 'ball' ? bodyB : null);
-        
-        if (!ball) return; // Skip if neither body is the ball
-        
-        // Log collision for debugging
-        console.log(`Collision between ${bodyA.label} and ${bodyB.label}`);
-        
-        // For floor collisions, ensure good bounce
-        if (bodyA.label === 'floor' || bodyB.label === 'floor') {
-          const vy = ball.velocity.y;
-          
-          // If the ball is moving slowly, give it a boost
-          if (Math.abs(vy) < 2) {
-            Matter.Body.setVelocity(ball, {
-              x: ball.velocity.x,
-              y: -Math.max(2, Math.abs(vy) * 1.2) // Minimum upward velocity of 2
-            });
-            console.log("Bounce boost applied:", -Math.max(2, Math.abs(vy) * 1.2));
-          }
-        }
         
         // Check if ball entered the hoop
         if (
@@ -356,17 +346,12 @@ const GameScreen = ({ route, navigation }) => {
               });
             }, 1000);
           } else {
-            resetBall();
+            // Use the helper function with the current entities
+            if (gameEngineRef.current) {
+              const currentEntities = gameEngineRef.current.entities;
+              resetBall(currentEntities);
+            }
           }
-        }
-        
-        // Check if ball hit the bottom barrier and reset
-        if (
-          (bodyA.label === 'ball' && bodyB.label === 'bottomBarrier') ||
-          (bodyA.label === 'bottomBarrier' && bodyB.label === 'ball')
-        ) {
-          // Ball went too far down, reset it
-          resetBall();
         }
       });
     });
@@ -379,8 +364,6 @@ const GameScreen = ({ route, navigation }) => {
         size: BALL_SIZE, 
         color: 'orange',
         bounceCount: 0,
-        wasOnFloor: false,
-        lastBounceTime: 0,
         renderer: Basketball 
       },
       floor: { 
@@ -417,6 +400,14 @@ const GameScreen = ({ route, navigation }) => {
       Matter.Engine.clear(engine);
     };
   }, [level]);
+  
+  // Helper function to reset the ball to starting position
+  const resetBallState = () => {
+    if (!gameEngineRef.current || !gameEngineRef.current.entities) return;
+    
+    resetBall(gameEngineRef.current.entities);
+    setDebugInfo({bounces: 0});
+  };
   
   // Pan responder for shooting the ball
   const panResponder = PanResponder.create({
@@ -530,28 +521,24 @@ const GameScreen = ({ route, navigation }) => {
     const ball = entities.ball.body;
     Matter.Body.setStatic(ball, false);
     
-    // Calculate force magnitude (drastically increased)
+    // Calculate force magnitude (significantly increased)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
     
-    // Apply force in the opposite direction of the drag (increased force magnitude)
-    // Adjusted for better mobile experience - MUCH higher force now
-    const forceMagnitude = Math.min(dragDistance * 0.008, 0.12);
+    // Apply force in the opposite direction of the drag
+    // Using a much higher force now
+    const forceMagnitude = Math.min(dragDistance * 0.01, 0.15);
     
     const forceX = -dx * forceMagnitude;
     const forceY = -dy * forceMagnitude;
     
-    // Add a minimum force threshold to ensure movement
-    const adjustedForceX = Math.abs(forceX) < 0.01 ? Math.sign(forceX) * 0.01 : forceX;
-    const adjustedForceY = Math.abs(forceY) < 0.01 ? Math.sign(forceY) * 0.01 : forceY;
-    
-    Matter.Body.applyForce(ball, ball.position, {
-      x: adjustedForceX,
-      y: adjustedForceY
+    Matter.Body.setVelocity(ball, {
+      x: forceX * 10, // Direct velocity setting is more reliable than forces
+      y: forceY * 10
     });
     
-    console.log('Shot force applied:', {
-      x: adjustedForceX,
-      y: adjustedForceY,
+    console.log('Shot velocity set:', {
+      x: forceX * 10,
+      y: forceY * 10,
       magnitude: forceMagnitude,
       dragDistance
     });
@@ -561,23 +548,6 @@ const GameScreen = ({ route, navigation }) => {
     
     // Decrement shots remaining
     setShotsRemaining(prevShots => prevShots - 1);
-  };
-  
-  // Helper function to reset the ball to starting position
-  const resetBall = () => {
-    if (!entities) return;
-    
-    const ball = entities.ball.body;
-    Matter.Body.setPosition(ball, {
-      x: ballPositionRef.current.x,
-      y: ballPositionRef.current.y
-    });
-    Matter.Body.setVelocity(ball, { x: 0, y: 0 });
-    Matter.Body.setAngularVelocity(ball, 0);
-    Matter.Body.setStatic(ball, true);
-    
-    // Reset bounce count
-    setDebugInfo({bounces: 0});
   };
   
   // Helper function to calculate score based on shot difficulty
@@ -603,7 +573,7 @@ const GameScreen = ({ route, navigation }) => {
   // Handle restart button press
   const handleRestartPress = () => {
     // Reset the game
-    resetBall();
+    resetBallState();
     setScore(0);
     setShotsRemaining(5);
   };
@@ -620,7 +590,7 @@ const GameScreen = ({ route, navigation }) => {
       <GameEngine
         ref={gameEngineRef}
         style={styles.gameEngine}
-        systems={[Physics]}
+        systems={[CustomPhysics]} // Using our custom physics
         entities={entities}
         running={true}
         onEvent={onEvent}
