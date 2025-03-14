@@ -66,7 +66,27 @@ const CustomPhysics = (entities, { time, dispatch }) => {
     if (Math.abs(vel.y) < 2) {
       console.log("Ball stopped due to low bounce");
       ball.isStatic = true;
+      dispatch({ type: 'ball-stopped' });
       return entities;
+    }
+  }
+  
+  // Check if the ball passes through the hoop
+  if (entities.hoop) {
+    const hoop = entities.hoop;
+    const hoopX = hoop.position.x;
+    const hoopY = hoop.position.y;
+    
+    const isInHoopX = Math.abs(pos.x - hoopX) < hoop.size.width / 4;
+    const isAtHoopY = Math.abs(pos.y - hoopY) < 10; // Close to rim height
+    const isMovingDown = vel.y > 0; // Ball is moving downward
+    
+    if (isInHoopX && isAtHoopY && isMovingDown) {
+      // Score!
+      console.log("SCORE! Ball went through the hoop");
+      if (dispatch) {
+        dispatch({ type: 'score' });
+      }
     }
   }
   
@@ -246,6 +266,7 @@ const GameScreen = ({ route, navigation }) => {
   const [trajectoryPoints, setTrajectoryPoints] = useState([]);
   const [showTutorial, setShowTutorial] = useState(true);
   const [tutorialText, setTutorialText] = useState('');
+  const [isBallMoving, setIsBallMoving] = useState(false);
   const [debugInfo, setDebugInfo] = useState({bounces: 0});
   
   // Store aim coordinates
@@ -286,12 +307,24 @@ const GameScreen = ({ route, navigation }) => {
     }
   };
   
+  // Helper function to reset
+  const resetBallState = () => {
+    if (gameEngineRef.current && gameEngineRef.current.entities) {
+      resetBall(gameEngineRef.current.entities);
+    }
+    setDebugInfo({bounces: 0});
+    setIsBallMoving(false);
+  };
+  
   // Handle game events
   const onEvent = (e) => {
     if (e.type === 'ball-bounce') {
       setDebugInfo(prev => ({...prev, bounces: prev.bounces + 1}));
     } else if (e.type === 'ball-reset') {
       setDebugInfo(prev => ({...prev, bounces: 0}));
+      setIsBallMoving(false);
+    } else if (e.type === 'ball-stopped') {
+      setIsBallMoving(false);
     } else if (e.type === 'score') {
       // Increase the score when the ball goes through the hoop
       setScore(prev => prev + calculateShotScore());
@@ -307,7 +340,8 @@ const GameScreen = ({ route, navigation }) => {
           });
         }, 1000);
       } else {
-        resetBallState();
+        // Reset the ball after a short delay to show it going through the net
+        setTimeout(resetBallState, 500);
       }
     }
   };
@@ -325,11 +359,22 @@ const GameScreen = ({ route, navigation }) => {
   
   // Initialize entities
   useEffect(() => {
-    setTutorialText(getLevelTutorial(level));
+    setTutorialText("Swipe from the ball to shoot. More power for longer swipes!");
     
-    // Load level configuration
-    const levelConfig = generateLevel(level);
-    const hoopPosition = levelConfig.hoopPosition;
+    // Define default hoop position based on difficulty level
+    let hoopPosition;
+    
+    if (level === 1) {
+      // Easy - closer to the player, midway up the screen
+      hoopPosition = { x: width * 0.75, y: height * 0.4 };
+    } else if (level === 2) {
+      // Medium - further to the right and slightly higher
+      hoopPosition = { x: width * 0.8, y: height * 0.35 };
+    } else {
+      // Hard - smaller target further away
+      hoopPosition = { x: width * 0.85, y: height * 0.3 };
+    }
+    
     const hoopSize = { width: 100, height: 70 };
     
     // Create entities with super simplified physics
@@ -358,47 +403,9 @@ const GameScreen = ({ route, navigation }) => {
     setEntities(initialEntities);
   }, [level]);
   
-  // Check if ball passes through hoop - simplified scoring logic
-  useEffect(() => {
-    if (!entities || !entities.ball || entities.ball.isStatic) return;
-    
-    const checkHoopCollision = () => {
-      if (!entities || !entities.ball) return;
-      
-      const ball = entities.ball;
-      const hoop = entities.hoop;
-      
-      // Ball's current position
-      const ballX = ball.x;
-      const ballY = ball.y;
-      
-      // Hoop's position
-      const hoopX = hoop.position.x;
-      const hoopY = hoop.position.y;
-      
-      // Check if ball passes through the hoop
-      const isInHoopX = Math.abs(ballX - hoopX) < hoop.size.width / 4;
-      const isAtHoopY = Math.abs(ballY - hoopY) < 10; // Close to rim height
-      const isMovingDown = ball.vy > 0; // Ball is moving downward
-      
-      if (isInHoopX && isAtHoopY && isMovingDown) {
-        // Score!
-        console.log("SCORE! Ball went through the hoop");
-        if (gameEngineRef.current) {
-          gameEngineRef.current.dispatch({ type: 'score' });
-        }
-      }
-    };
-    
-    // Check for scoring several times per second
-    const intervalId = setInterval(checkHoopCollision, 100);
-    
-    return () => clearInterval(intervalId);
-  }, [entities]);
-  
   // Pan responder for shooting
   const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponder: () => !isBallMoving, // Only allow touch if ball is not moving
     onPanResponderGrant: (evt) => {
       const { locationX, locationY } = evt.nativeEvent;
       setIsAiming(true);
@@ -414,6 +421,8 @@ const GameScreen = ({ route, navigation }) => {
       });
     },
     onPanResponderMove: (evt, gesture) => {
+      if (isBallMoving) return; // Don't process if ball is moving
+      
       const { locationX, locationY } = evt.nativeEvent;
       
       setAimCoordinates(prev => ({
@@ -425,6 +434,8 @@ const GameScreen = ({ route, navigation }) => {
       calculateTrajectory(locationX, locationY);
     },
     onPanResponderRelease: (evt, gesture) => {
+      if (isBallMoving) return; // Don't process if ball is moving
+      
       const { startX, startY, currentX, currentY } = aimCoordinates;
       
       const dx = currentX - startX;
@@ -485,18 +496,37 @@ const GameScreen = ({ route, navigation }) => {
   
   // Shoot the ball
   const shootBall = (dx, dy) => {
-    if (!entities || !entities.ball || shotsRemaining <= 0) return;
+    if (!entities || !entities.ball || shotsRemaining <= 0 || isBallMoving) return;
     
     playShootSound();
     
-    // Calculate force
+    // Calculate force (increased for easiness)
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
-    const forceMagnitude = Math.min(dragDistance * 0.04, 20); // Even higher values for faster movement
     
     // Update ball state
     entities.ball.isStatic = false;
-    entities.ball.vx = -dx * forceMagnitude * 0.025; // Increased for faster movement
-    entities.ball.vy = -dy * forceMagnitude * 0.025; // Increased for faster movement
+
+    // Auto-aim assist: if shooting roughly in the hoop's direction, help a bit
+    const hoopX = entities.hoop.position.x;
+    const hoopY = entities.hoop.position.y;
+    const ballX = entities.ball.x;
+    const ballY = entities.ball.y;
+    
+    // Desired angle to reach the hoop
+    const targetDx = hoopX - ballX;
+    const targetDy = hoopY - ballY - 60; // Aim a bit above the hoop for arc
+    
+    // Blend user input with auto-aim (80% user, 20% auto-aim)
+    const blendedDx = -dx * 0.8 + targetDx * 0.2;
+    const blendedDy = -dy * 0.8 + targetDy * 0.2;
+    
+    // Calculate velocity - use larger values for easier gameplay
+    const speedFactor = 0.1;  // Increased for more powerful shots
+    const vx = blendedDx * speedFactor;
+    const vy = blendedDy * speedFactor;
+    
+    entities.ball.vx = vx;
+    entities.ball.vy = vy;
     
     console.log('Shot velocity set:', {
       x: entities.ball.vx,
@@ -504,19 +534,14 @@ const GameScreen = ({ route, navigation }) => {
       dragDistance
     });
     
+    // Mark ball as moving
+    setIsBallMoving(true);
+    
     // Reset bounce count
     setDebugInfo({bounces: 0});
     
     // Decrement shots
     setShotsRemaining(prevShots => prevShots - 1);
-  };
-  
-  // Helper function to reset
-  const resetBallState = () => {
-    if (gameEngineRef.current && gameEngineRef.current.entities) {
-      resetBall(gameEngineRef.current.entities);
-    }
-    setDebugInfo({bounces: 0});
   };
   
   // Score calculation
@@ -538,7 +563,7 @@ const GameScreen = ({ route, navigation }) => {
   
   // Debug mode
   const toggleDebugMode = () => {
-    Alert.alert('Debug Info', `Bounce count: ${debugInfo.bounces}\nShots remaining: ${shotsRemaining}`);
+    Alert.alert('Debug Info', `Bounce count: ${debugInfo.bounces}\nShots remaining: ${shotsRemaining}\nBall moving: ${isBallMoving ? 'Yes' : 'No'}`);
   };
   
   if (!entities) return null;
