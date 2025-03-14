@@ -18,104 +18,166 @@ const BALL_SIZE = 40;
 const BALL_RADIUS = BALL_SIZE / 2;
 const FLOOR_HEIGHT = 50;
 
-// Very important! Custom physics for reliable bouncing
+// Super-simplified physics system
 const CustomPhysics = (entities, { time, dispatch }) => {
-  // Get the standard physics engine
-  const engine = entities.physics.engine;
+  if (!entities.ball) return entities;
   
-  // Get current ball state
-  const ball = entities.ball.body;
-  const ballIsStatic = ball.isStatic;
+  const ball = entities.ball;
   
-  // If ball is in motion, handle custom physics
-  if (!ballIsStatic) {
-    // Only update Matter physics once per frame with small time steps
-    const timeScale = 0.5; // Slower physics for better stability
-    Matter.Engine.update(engine, time.delta * timeScale);
+  // If ball is static, don't apply physics
+  if (ball.isStatic) return entities;
+  
+  // Get current position
+  const pos = { x: ball.x, y: ball.y };
+  const vel = { x: ball.vx, y: ball.vy };
+  
+  // Apply gravity
+  vel.y += 0.5; // Stronger gravity
+  
+  // Update position based on velocity
+  pos.x += vel.x;
+  pos.y += vel.y;
+  
+  // Check for floor collision
+  const floorY = height - FLOOR_HEIGHT - BALL_RADIUS;
+  if (pos.y > floorY && vel.y > 0) {
+    // Hit the floor, bounce!
+    console.log("FLOOR COLLISION DETECTED - MANUAL BOUNCE");
     
-    // Store current position
-    entities.ball.prevPosition = entities.ball.prevPosition || { x: ball.position.x, y: ball.position.y };
+    // Bounce with damping factor
+    vel.y = -vel.y * 0.7; // Bounce is 70% of incoming velocity
     
-    // Store velocity
-    const velocity = {
-      x: ball.velocity.x,
-      y: ball.velocity.y
-    };
+    // Ensure the ball is above the floor
+    pos.y = floorY;
     
-    // CRITICAL: Force-based bounce simulation when hitting floor
-    // This directly manipulates velocity rather than relying on Matter.js restitution
-    if (ball.position.y > height - FLOOR_HEIGHT - BALL_RADIUS) {
-      // Ball hit the floor
-      if (velocity.y > 0) { // Only if moving downward
-        console.log("FLOOR COLLISION DETECTED - MANUAL BOUNCE");
-        
-        // Manual "bounce" by reversing velocity with damping
-        const bounceFactor = 0.8; // Higher values = more bounce
-        
-        Matter.Body.setVelocity(ball, {
-          x: velocity.x * 0.98, // slight horizontal damping
-          y: -velocity.y * bounceFactor // reverse vertical with bounce factor
-        });
-        
-        // Log the bounce for debugging
-        if (dispatch) {
-          dispatch({ type: 'ball-bounce' });
-        }
-      }
+    // Slow down horizontal movement due to friction
+    vel.x *= 0.9;
+    
+    // Track bounce
+    ball.bounceCount = (ball.bounceCount || 0) + 1;
+    console.log(`Bounce #${ball.bounceCount}, velocity: ${vel.y}`);
+    
+    // Dispatch bounce event
+    if (dispatch) {
+      dispatch({ type: 'ball-bounce' });
     }
     
-    // Apply a constant gravity force (more reliable than Matter.js gravity)
-    Matter.Body.applyForce(ball, ball.position, {
-      x: 0,
-      y: 0.0005 // Custom gravity force
-    });
-    
-    // Check for very slow movement and reset if needed
-    const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
-    if (speed < 0.1 && ball.position.y > height - FLOOR_HEIGHT - BALL_RADIUS - 5) {
-      // Ball is nearly stopped and on the floor - reset it
-      console.log("Ball stopped - resetting");
-      resetBall(entities);
+    // If bounce is very small, stop the ball
+    if (Math.abs(vel.y) < 2) {
+      console.log("Ball stopped due to low bounce");
+      ball.isStatic = true;
+      return entities;
     }
-    
-    // Check if ball is off-screen
-    if (
-      ball.position.y > height + 100 || 
-      ball.position.y < -100 ||
-      ball.position.x > width + 100 ||
-      ball.position.x < -100
-    ) {
-      console.log("Ball off-screen - resetting");
-      resetBall(entities);
-      if (dispatch) {
-        dispatch({ type: 'ball-reset' });
-      }
-    }
-    
-    // Update previous position for next frame
-    entities.ball.prevPosition = { 
-      x: ball.position.x, 
-      y: ball.position.y 
-    };
   }
+  
+  // Check wall collisions
+  // Left wall
+  if (pos.x < BALL_RADIUS) {
+    pos.x = BALL_RADIUS;
+    vel.x = -vel.x * 0.7;
+  }
+  // Right wall
+  if (pos.x > width - BALL_RADIUS) {
+    pos.x = width - BALL_RADIUS;
+    vel.x = -vel.x * 0.7;
+  }
+  // Ceiling
+  if (pos.y < BALL_RADIUS) {
+    pos.y = BALL_RADIUS;
+    vel.y = -vel.y * 0.7;
+  }
+  
+  // Check if ball is off-screen
+  if (pos.y > height + 100 || pos.x < -100 || pos.x > width + 100) {
+    console.log("Ball off-screen - resetting");
+    resetBall(entities);
+    if (dispatch) {
+      dispatch({ type: 'ball-reset' });
+    }
+    return entities;
+  }
+  
+  // Update ball state
+  ball.x = pos.x;
+  ball.y = pos.y;
+  ball.vx = vel.x;
+  ball.vy = vel.y;
+  ball.rotation += vel.x * 0.05; // Add some rotation based on horizontal movement
   
   return entities;
 };
 
 // Helper function to reset ball
 const resetBall = (entities) => {
-  const ball = entities.ball.body;
-  Matter.Body.setPosition(ball, {
-    x: width * 0.2,
-    y: height - FLOOR_HEIGHT - BALL_RADIUS
-  });
-  Matter.Body.setVelocity(ball, { x: 0, y: 0 });
-  Matter.Body.setAngularVelocity(ball, 0);
-  Matter.Body.setStatic(ball, true);
-  
-  // Reset tracking data
+  // Update ball state
+  entities.ball.x = width * 0.2;
+  entities.ball.y = height - FLOOR_HEIGHT - BALL_RADIUS;
+  entities.ball.vx = 0;
+  entities.ball.vy = 0;
+  entities.ball.rotation = 0;
+  entities.ball.isStatic = true;
   entities.ball.bounceCount = 0;
-  entities.ball.prevPosition = null;
+  
+  return entities;
+};
+
+// Ball renderer component - extremely simplified
+const SimpleBall = (props) => {
+  const { x, y, size, rotation } = props;
+  
+  return (
+    <View
+      style={[
+        styles.ball,
+        {
+          left: x - size/2,
+          top: y - size/2,
+          width: size,
+          height: size,
+          borderRadius: size/2,
+          transform: [{ rotate: `${rotation}rad` }]
+        }
+      ]}
+    >
+      <View style={styles.ballInner}>
+        <View style={styles.ballLine} />
+      </View>
+    </View>
+  );
+};
+
+// Simplified floor renderer
+const SimpleFloor = (props) => {
+  return (
+    <View
+      style={[
+        styles.floor,
+        {
+          top: height - FLOOR_HEIGHT,
+          height: FLOOR_HEIGHT
+        }
+      ]}
+    />
+  );
+};
+
+// Hoop renderer
+const SimpleHoop = (props) => {
+  const { position, size } = props;
+  
+  return (
+    <View
+      style={[
+        styles.hoop,
+        {
+          left: position.x - size.width/2,
+          top: position.y - size.height/2,
+          width: size.width,
+          height: size.height
+        }
+      ]}
+    />
+  );
 };
 
 const GameScreen = ({ route, navigation }) => {
@@ -135,20 +197,17 @@ const GameScreen = ({ route, navigation }) => {
   const [aimCoordinates, setAimCoordinates] = useState({ startX: 0, startY: 0, currentX: 0, currentY: 0 });
   
   const gameEngineRef = useRef(null);
-  const ballPositionRef = useRef({ x: width * 0.2, y: height - FLOOR_HEIGHT - BALL_RADIUS });
   const soundRef = useRef(null);
   
-  // Sound effects - using a single sound instance to prevent memory leaks
+  // Sound effects
   const setupSound = async () => {
     if (!soundEnabled) return;
     
     try {
-      // Unload any existing sound
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
       }
       
-      // Create a new sound instance
       const { sound } = await Audio.Sound.createAsync(
         require('../assets/sounds/button_click.mp3')
       );
@@ -159,17 +218,15 @@ const GameScreen = ({ route, navigation }) => {
     }
   };
   
-  // Play the shoot sound
+  // Play sound
   const playShootSound = async () => {
     if (!soundEnabled || !soundRef.current) return;
     
     try {
-      // Reset sound to start
       await soundRef.current.setPositionAsync(0);
       await soundRef.current.playAsync();
     } catch (error) {
       console.log('Error playing sound:', error);
-      // If there's an error, try to set up the sound again
       setupSound();
     }
   };
@@ -183,11 +240,10 @@ const GameScreen = ({ route, navigation }) => {
     }
   };
   
-  // Set up sound on component mount
+  // Set up sound
   useEffect(() => {
     setupSound();
     
-    // Clean up sound when component unmounts
     return () => {
       if (soundRef.current) {
         soundRef.current.unloadAsync();
@@ -195,221 +251,42 @@ const GameScreen = ({ route, navigation }) => {
     };
   }, [soundEnabled]);
   
-  // Initialize physics engine
+  // Initialize entities
   useEffect(() => {
-    // Set tutorial text
     setTutorialText(getLevelTutorial(level));
-    
-    // Create physics engine with basic settings
-    const engine = Matter.Engine.create({ 
-      enableSleeping: false,
-    });
-    
-    const world = engine.world;
     
     // Load level configuration
     const levelConfig = generateLevel(level);
-    
-    // Set world gravity very low - we'll handle most physics manually
-    world.gravity.x = 0;
-    world.gravity.y = 0.1; // Very low gravity - we'll apply forces manually
-    
-    console.log(`World gravity set to: (${world.gravity.x}, ${world.gravity.y})`);
-    
-    // Create ball with special physics properties
-    const ball = Matter.Bodies.circle(
-      ballPositionRef.current.x,
-      ballPositionRef.current.y,
-      BALL_RADIUS,
-      { 
-        restitution: 0.0,     // No built-in bounce - we handle manually
-        friction: 0.01,       // Very low friction
-        frictionAir: 0.001,   // Low air resistance
-        label: 'ball',
-        isStatic: true,       // Start static until shot
-        density: 0.001,       // Very low density
-      }
-    );
-    
-    // Create floor
-    const floor = Matter.Bodies.rectangle(
-      width / 2,
-      height - FLOOR_HEIGHT / 2,
-      width,
-      FLOOR_HEIGHT,
-      { 
-        isStatic: true,
-        label: 'floor',
-        restitution: 0.0,  // No built-in bounce
-        friction: 0.1,
-      }
-    );
-    
-    // Create invisible barrier below the floor to catch balls
-    const bottomBarrier = Matter.Bodies.rectangle(
-      width / 2,
-      height + 100,
-      width * 2,
-      20,
-      { 
-        isStatic: true,
-        label: 'bottomBarrier',
-      }
-    );
-    
-    // Create walls
-    const leftWall = Matter.Bodies.rectangle(
-      -10,
-      height / 2,
-      20,
-      height * 2,
-      { isStatic: true, label: 'wall', friction: 0.1 }
-    );
-    
-    const rightWall = Matter.Bodies.rectangle(
-      width + 10,
-      height / 2,
-      20,
-      height * 2,
-      { isStatic: true, label: 'wall', friction: 0.1 }
-    );
-    
-    const ceiling = Matter.Bodies.rectangle(
-      width / 2,
-      -10,
-      width * 2,
-      20,
-      { isStatic: true, label: 'ceiling', friction: 0.1 }
-    );
-    
-    // Create hoop
     const hoopPosition = levelConfig.hoopPosition;
     const hoopSize = { width: 100, height: 70 };
     
-    const hoopSensor = Matter.Bodies.rectangle(
-      hoopPosition.x,
-      hoopPosition.y,
-      hoopSize.width * 0.4,
-      10,
-      {
-        isSensor: true,
-        isStatic: true,
-        label: 'hoopSensor',
-      }
-    );
-    
-    // Add all bodies to the world
-    Matter.Composite.add(world, [ball, floor, leftWall, rightWall, ceiling, bottomBarrier, hoopSensor]);
-    
-    // Add any obstacles from level config
-    if (levelConfig.obstacles) {
-      levelConfig.obstacles.forEach(obstacle => {
-        const obstacleBody = Matter.Bodies.rectangle(
-          obstacle.x,
-          obstacle.y,
-          obstacle.width,
-          obstacle.height,
-          {
-            isStatic: true,
-            label: 'obstacle',
-            friction: 0.1,
-            restitution: 0.4,
-          }
-        );
-        Matter.Composite.add(world, obstacleBody);
-      });
-    }
-    
-    // Set up collision detection for scoring and walls
-    Matter.Events.on(engine, 'collisionStart', (event) => {
-      const pairs = event.pairs;
-      
-      pairs.forEach((pair) => {
-        const { bodyA, bodyB } = pair;
-        
-        // Check if ball entered the hoop
-        if (
-          (bodyA.label === 'ball' && bodyB.label === 'hoopSensor') ||
-          (bodyA.label === 'hoopSensor' && bodyB.label === 'ball')
-        ) {
-          // Scored a basket!
-          setScore(prevScore => prevScore + calculateShotScore());
-          
-          // Check if level is complete
-          if (shotsRemaining <= 1) {
-            // Navigate to results screen after a short delay
-            setTimeout(() => {
-              navigation.replace('Result', {
-                level,
-                score: score + calculateShotScore(),
-                isLevelCompleted: true,
-              });
-            }, 1000);
-          } else {
-            // Use the helper function with the current entities
-            if (gameEngineRef.current) {
-              const currentEntities = gameEngineRef.current.entities;
-              resetBall(currentEntities);
-            }
-          }
-        }
-      });
-    });
-    
-    // Create initial entities
+    // Create entities with super simplified physics
     const initialEntities = {
-      physics: { engine, world },
-      ball: { 
-        body: ball, 
-        size: BALL_SIZE, 
-        color: 'orange',
+      floor: {
+        renderer: SimpleFloor
+      },
+      ball: {
+        x: width * 0.2,
+        y: height - FLOOR_HEIGHT - BALL_RADIUS,
+        size: BALL_SIZE,
+        vx: 0,
+        vy: 0,
+        rotation: 0,
+        isStatic: true,
         bounceCount: 0,
-        renderer: Basketball 
+        renderer: SimpleBall
       },
-      floor: { 
-        body: floor, 
-        color: '#222', 
-        renderer: Floor 
-      },
-      hoop: { 
+      hoop: {
         position: hoopPosition,
         size: hoopSize,
-        sensor: hoopSensor,
-        renderer: Hoop 
-      },
+        renderer: SimpleHoop
+      }
     };
-    
-    // Add obstacles to entities
-    if (levelConfig.obstacles) {
-      levelConfig.obstacles.forEach((obstacle, index) => {
-        initialEntities[`obstacle_${index}`] = {
-          body: world.bodies.find(b => b.label === 'obstacle' && 
-                               b.position.x === obstacle.x && 
-                               b.position.y === obstacle.y),
-          size: { width: obstacle.width, height: obstacle.height },
-          color: obstacle.color || '#444',
-          renderer: Floor // Reusing Floor component for obstacles
-        };
-      });
-    }
     
     setEntities(initialEntities);
-    
-    // Clean up
-    return () => {
-      Matter.Engine.clear(engine);
-    };
   }, [level]);
   
-  // Helper function to reset the ball to starting position
-  const resetBallState = () => {
-    if (!gameEngineRef.current || !gameEngineRef.current.entities) return;
-    
-    resetBall(gameEngineRef.current.entities);
-    setDebugInfo({bounces: 0});
-  };
-  
-  // Pan responder for shooting the ball
+  // Pan responder for shooting
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt) => {
@@ -418,7 +295,6 @@ const GameScreen = ({ route, navigation }) => {
       setTrajectoryPoints([]);
       setShowTutorial(false);
       
-      // Store the initial touch position
       setAimCoordinates({
         startX: locationX,
         startY: locationY,
@@ -429,24 +305,20 @@ const GameScreen = ({ route, navigation }) => {
     onPanResponderMove: (evt, gesture) => {
       const { locationX, locationY } = evt.nativeEvent;
       
-      // Update the current touch position
       setAimCoordinates(prev => ({
         ...prev,
         currentX: locationX,
         currentY: locationY
       }));
       
-      // Calculate trajectory based on the current aiming vector
       calculateTrajectory(locationX, locationY);
     },
     onPanResponderRelease: (evt, gesture) => {
       const { startX, startY, currentX, currentY } = aimCoordinates;
       
-      // Calculate the drag vector
       const dx = currentX - startX;
       const dy = currentY - startY;
       
-      // Only shoot if the drag distance is significant
       const dragDistance = Math.sqrt(dx * dx + dy * dy);
       if (dragDistance > 20) {
         shootBall(dx, dy);
@@ -457,37 +329,30 @@ const GameScreen = ({ route, navigation }) => {
     }
   });
   
-  // Calculate trajectory based on aim coordinates
+  // Calculate trajectory
   const calculateTrajectory = (currentX, currentY) => {
     if (!aimCoordinates.startX) return;
     
-    // Vector from current position to start position (drag direction)
     const dx = currentX - aimCoordinates.startX;
     const dy = currentY - aimCoordinates.startY;
     
-    // Only calculate if there's enough drag distance
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
     if (dragDistance < 10) return;
     
-    // Prepare trajectory points array
     const points = [];
     
     // Ball starting position
-    const ballX = ballPositionRef.current.x;
-    const ballY = ballPositionRef.current.y;
-    
-    // Scale factor for force (adjusted for better trajectory visualization)
-    const forceScale = 0.1;
+    const ballX = width * 0.2;
+    const ballY = height - FLOOR_HEIGHT - BALL_RADIUS;
     
     // Force vector (opposite to drag direction)
+    const forceScale = 0.5; // Much higher for visibility
     const forceX = -dx * forceScale;
     const forceY = -dy * forceScale;
     
-    // Simplified physics simulation to show trajectory
-    // Time step
-    const timeStep = 0.2;
-    // Gravity
-    const gravity = 0.1;
+    // Simple projectile simulation
+    const timeStep = 0.1;
+    const gravity = 0.5;
     
     let vx = forceX;
     let vy = forceY;
@@ -496,89 +361,71 @@ const GameScreen = ({ route, navigation }) => {
     
     // Generate trajectory points
     for (let i = 0; i < 20; i++) {
-      // Add point
       points.push({ x, y });
       
-      // Update position using velocity
       x += vx * timeStep;
       y += vy * timeStep;
       
-      // Update velocity due to gravity
       vy += gravity * timeStep;
     }
     
     setTrajectoryPoints(points);
   };
   
-  // Helper function for shooting the ball
+  // Shoot the ball
   const shootBall = (dx, dy) => {
-    if (!entities || shotsRemaining <= 0) return;
+    if (!entities || !entities.ball || shotsRemaining <= 0) return;
     
-    // Play sound
     playShootSound();
     
-    // Make the ball dynamic
-    const ball = entities.ball.body;
-    Matter.Body.setStatic(ball, false);
-    
-    // Calculate force magnitude (significantly increased)
+    // Calculate force
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
+    const forceMagnitude = Math.min(dragDistance * 0.03, 15); // Much higher values for simplified physics
     
-    // Apply force in the opposite direction of the drag
-    // Using a much higher force now
-    const forceMagnitude = Math.min(dragDistance * 0.01, 0.15);
-    
-    const forceX = -dx * forceMagnitude;
-    const forceY = -dy * forceMagnitude;
-    
-    Matter.Body.setVelocity(ball, {
-      x: forceX * 10, // Direct velocity setting is more reliable than forces
-      y: forceY * 10
-    });
+    // Update ball state
+    entities.ball.isStatic = false;
+    entities.ball.vx = -dx * forceMagnitude * 0.015;
+    entities.ball.vy = -dy * forceMagnitude * 0.015;
     
     console.log('Shot velocity set:', {
-      x: forceX * 10,
-      y: forceY * 10,
-      magnitude: forceMagnitude,
+      x: entities.ball.vx,
+      y: entities.ball.vy,
       dragDistance
     });
     
-    // Reset bounce count for the new shot
+    // Reset bounce count
     setDebugInfo({bounces: 0});
     
-    // Decrement shots remaining
+    // Decrement shots
     setShotsRemaining(prevShots => prevShots - 1);
   };
   
-  // Helper function to calculate score based on shot difficulty
-  const calculateShotScore = () => {
-    // Base score
-    let score = 100;
-    
-    // Add bonus for remaining shots
-    score += shotsRemaining * 20;
-    
-    // Add bonus for level difficulty
-    score += level * 10;
-    
-    return score;
+  // Helper function to reset
+  const resetBallState = () => {
+    if (gameEngineRef.current && gameEngineRef.current.entities) {
+      resetBall(gameEngineRef.current.entities);
+    }
+    setDebugInfo({bounces: 0});
   };
   
-  // Handle pause button press
+  // Score calculation
+  const calculateShotScore = () => {
+    return 100 + (shotsRemaining * 20) + (level * 10);
+  };
+  
+  // Handle pause
   const handlePausePress = () => {
-    // Navigate to level select
     navigation.navigate('LevelSelect');
   };
   
-  // Handle restart button press
+  // Handle restart
   const handleRestartPress = () => {
-    // Reset the game
     resetBallState();
     setScore(0);
     setShotsRemaining(5);
   };
   
-  // Debug mode toggle
+  // Debug mode
   const toggleDebugMode = () => {
     Alert.alert('Debug Info', `Bounce count: ${debugInfo.bounces}\nShots remaining: ${shotsRemaining}`);
   };
@@ -590,7 +437,7 @@ const GameScreen = ({ route, navigation }) => {
       <GameEngine
         ref={gameEngineRef}
         style={styles.gameEngine}
-        systems={[CustomPhysics]} // Using our custom physics
+        systems={[CustomPhysics]}
         entities={entities}
         running={true}
         onEvent={onEvent}
@@ -605,7 +452,7 @@ const GameScreen = ({ route, navigation }) => {
             { 
               left: point.x - 2, 
               top: point.y - 2,
-              opacity: 1 - (index / trajectoryPoints.length)  // Fade out dots further along trajectory
+              opacity: 1 - (index / trajectoryPoints.length)
             }
           ]}
         />
@@ -667,6 +514,38 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  ball: {
+    position: 'absolute',
+    backgroundColor: '#FF8C00',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  ballInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ballLine: {
+    width: '80%',
+    height: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  floor: {
+    position: 'absolute',
+    width: '100%',
+    backgroundColor: '#333',
+    left: 0,
+  },
+  hoop: {
+    position: 'absolute',
+    backgroundColor: 'red',
+    borderRadius: 5,
   },
   trajectoryPoint: {
     position: 'absolute',
