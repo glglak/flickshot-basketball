@@ -32,11 +32,11 @@ const CustomPhysics = (entities, { time, dispatch }) => {
   const vel = { x: ball.vx, y: ball.vy };
   
   // Apply gravity - increase for faster fall
-  vel.y += 1.2; // Stronger gravity for faster bounce
+  vel.y += 1.5; // Even stronger gravity for faster bounce
   
   // Update position based on velocity
-  pos.x += vel.x;
-  pos.y += vel.y;
+  pos.x += vel.x * 1.2; // Faster horizontal movement
+  pos.y += vel.y * 1.2; // Faster vertical movement
   
   // Check for floor collision
   const floorY = height - FLOOR_HEIGHT - BALL_RADIUS;
@@ -45,7 +45,7 @@ const CustomPhysics = (entities, { time, dispatch }) => {
     console.log("FLOOR COLLISION DETECTED - MANUAL BOUNCE");
     
     // Bounce with damping factor
-    vel.y = -vel.y * 0.7; // Bounce is 70% of incoming velocity
+    vel.y = -vel.y * 0.75; // Stronger bounce, less damping
     
     // Ensure the ball is above the floor
     pos.y = floorY;
@@ -74,17 +74,17 @@ const CustomPhysics = (entities, { time, dispatch }) => {
   // Left wall
   if (pos.x < BALL_RADIUS) {
     pos.x = BALL_RADIUS;
-    vel.x = -vel.x * 0.7;
+    vel.x = -vel.x * 0.8; // More elastic bounce
   }
   // Right wall
   if (pos.x > width - BALL_RADIUS) {
     pos.x = width - BALL_RADIUS;
-    vel.x = -vel.x * 0.7;
+    vel.x = -vel.x * 0.8; // More elastic bounce
   }
   // Ceiling
   if (pos.y < BALL_RADIUS) {
     pos.y = BALL_RADIUS;
-    vel.y = -vel.y * 0.7;
+    vel.y = -vel.y * 0.8; // More elastic bounce
   }
   
   // Check if ball is off-screen
@@ -102,7 +102,7 @@ const CustomPhysics = (entities, { time, dispatch }) => {
   ball.y = pos.y;
   ball.vx = vel.x;
   ball.vy = vel.y;
-  ball.rotation += vel.x * 0.05; // Add some rotation based on horizontal movement
+  ball.rotation += vel.x * 0.08; // More rotation for better visual effect
   
   return entities;
 };
@@ -180,6 +180,19 @@ const SimpleHoop = (props) => {
         ]}
       />
       
+      {/* Square target on backboard */}
+      <View
+        style={[
+          styles.backboardTarget,
+          {
+            left: position.x - size.width/6,
+            top: position.y - size.height/2 - 10,
+            width: size.width/3,
+            height: size.width/3
+          }
+        ]}
+      />
+      
       {/* Rim */}
       <View
         style={[
@@ -193,10 +206,10 @@ const SimpleHoop = (props) => {
         ]}
       />
       
-      {/* Net (simplified) */}
+      {/* Net - multiple stripes for more realistic appearance */}
       <View
         style={[
-          styles.net,
+          styles.netContainer,
           {
             left: position.x - size.width/6,
             top: position.y + 5,
@@ -204,7 +217,20 @@ const SimpleHoop = (props) => {
             height: size.height/2
           }
         ]}
-      />
+      >
+        {/* Vertical net strands */}
+        <View style={styles.netStrand} />
+        <View style={[styles.netStrand, { left: '20%' }]} />
+        <View style={[styles.netStrand, { left: '40%' }]} />
+        <View style={[styles.netStrand, { left: '60%' }]} />
+        <View style={[styles.netStrand, { left: '80%' }]} />
+        
+        {/* Horizontal net strands */}
+        <View style={[styles.netHorizontal, { top: '20%' }]} />
+        <View style={[styles.netHorizontal, { top: '40%' }]} />
+        <View style={[styles.netHorizontal, { top: '60%' }]} />
+        <View style={[styles.netHorizontal, { top: '80%' }]} />
+      </View>
     </View>
   );
 };
@@ -437,7 +463,7 @@ const GameScreen = ({ route, navigation }) => {
     
     // Simple projectile simulation
     const timeStep = 0.1;
-    const gravity = 1.2; // Match the physics gravity
+    const gravity = 1.5; // Match the physics gravity
     
     let vx = forceX;
     let vy = forceY;
@@ -465,12 +491,12 @@ const GameScreen = ({ route, navigation }) => {
     
     // Calculate force
     const dragDistance = Math.sqrt(dx * dx + dy * dy);
-    const forceMagnitude = Math.min(dragDistance * 0.03, 15); // Much higher values for simplified physics
+    const forceMagnitude = Math.min(dragDistance * 0.04, 20); // Even higher values for faster movement
     
     // Update ball state
     entities.ball.isStatic = false;
-    entities.ball.vx = -dx * forceMagnitude * 0.02; // Increased for faster movement
-    entities.ball.vy = -dy * forceMagnitude * 0.02; // Increased for faster movement
+    entities.ball.vx = -dx * forceMagnitude * 0.025; // Increased for faster movement
+    entities.ball.vy = -dy * forceMagnitude * 0.025; // Increased for faster movement
     
     console.log('Shot velocity set:', {
       x: entities.ball.vx,
@@ -591,7 +617,7 @@ const GameScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#87CEEB', // Sky blue background
+    backgroundColor: '#4b9cd3', // Basketball court blue
   },
   gameEngine: {
     position: 'absolute',
@@ -610,6 +636,8 @@ const styles = StyleSheet.create({
     elevation: 5,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.2)',
   },
   ballLine: {
     position: 'absolute',
@@ -621,7 +649,7 @@ const styles = StyleSheet.create({
   floor: {
     position: 'absolute',
     width: '100%',
-    backgroundColor: '#333',
+    backgroundColor: '#8B4513', // Brown wooden floor
     left: 0,
   },
   hoopContainer: {
@@ -635,20 +663,41 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#000',
   },
+  backboardTarget: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: '#FF4500',
+    backgroundColor: 'transparent',
+  },
   rim: {
     position: 'absolute',
     backgroundColor: '#FF4500', // Orange-red rim
     borderRadius: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 1,
+    elevation: 3,
   },
-  net: {
+  netContainer: {
     position: 'absolute',
-    backgroundColor: '#FFFFFF', // Solid white
+    overflow: 'hidden',
     borderBottomLeftRadius: 10,
     borderBottomRightRadius: 10,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderLeftColor: 'rgba(0,0,0,0.1)',
-    borderRightColor: 'rgba(0,0,0,0.1)',
+  },
+  netStrand: {
+    position: 'absolute',
+    width: 1,
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    left: 0,
+  },
+  netHorizontal: {
+    position: 'absolute',
+    width: '100%',
+    height: 1,
+    backgroundColor: '#FFFFFF',
+    top: 0,
   },
   trajectoryPoint: {
     position: 'absolute',
